@@ -3,7 +3,7 @@
 平时自己使用多线程调用 OPENAI 的 API，现在只是初略地增加了消息通知工具。时间比较匆忙，代码整体不太完善，后面有时间再继续完善。
 
 ## Demo
-```
+```python
 from APIManager import AutoSender, repeat_until_calling_openai_api_successfully, get_account_manager
 from typing import Dict, List
 import openai
