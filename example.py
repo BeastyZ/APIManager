@@ -1,45 +1,62 @@
-from APIManager import AutoSender, repeat_until_calling_openai_api_successfully, get_account_manager
+from APIManager import AutoSender, openai_error_wrapper, get_account_manager
 from typing import Dict, List
-import openai
+from openai import OpenAI
 import concurrent.futures
 import uuid
 
 
-@repeat_until_calling_openai_api_successfully
-def call_chatgpt(model: str, field: str, example: Dict, **kwargs) -> str:
-    messages = [{"role": "user", "content": example["prompt"]}]
-    completion = openai.ChatCompletion.create(model=model, messages=messages, temperature=1.1, top_p=1.0, max_tokens=4096)
-    ret = completion['choices'][0]['message']['content']
-    example[field] = ret
+@openai_error_wrapper
+def call_chatgpt(index: int, model: str, prompt: str, **kwargs) -> str:
+    global client
+
+    temperature = kwargs.pop('temperature', 1.0)
+    top_p = kwargs.pop('top_p', 1.0)
+    max_tokens = kwargs.pop('max_tokens', 4096)
+    messages = [{"role": "user", "content": prompt}]
+    completion = client.chat.completions.create(model=model, 
+                                                messages=messages, 
+                                                temperature=temperature, 
+                                                top_p=top_p, 
+                                                max_tokens=max_tokens)
+    ret = completion.choices[0].message.content
+    return index, ret
 
 
-def generate(templates: List[str], api_model: str="gpt-3.5-turbo") -> List[Dict[str, str]]:
-    examples = [{"prompt": template} for template in templates]
+def generate(prompts: List[str], api_model: str="gpt-3.5-turbo") -> List[Dict[str, str]]:
+    examples = [{"prompt": prompt} for prompt in prompts]
     
     global account_manager, sender
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = []
-        for example in examples:
+        for index, example in enumerate(examples):
             future = executor.submit(
                 call_chatgpt,
+                index,
                 api_model,
-                "result",
-                example,
+                example['prompt'],
                 thread_id=uuid.uuid4(),
                 sender=sender,
                 account_manager=account_manager,
             )
             futures.append(future)
 
+        results = []
         for future in concurrent.futures.as_completed(futures):
-            future.result()
+            index, ret = future.result()
+            results.append((index, ret))
+        results = sorted([result[1] for result in results], key=lambda x: x[0])
 
+    for i in range(len(results)):
+        examples[i]['response'] = results[i]
     return examples
 
 
 account_manager = get_account_manager('openai_account/available.txt', 'openai_account/used.txt', multi_thread=True)
 sender = AutoSender.from_sender_name("lark", webhook_addr="YOUR_WEBHOOK_ADDRESS", description="test_desc")
+client = OpenAI(
+    api_key="sk-xxxx",
+)
 
-templates = ["test_case" for _ in range(10)]
-examples = generate(templates)
+prompts = [f"你好呀~[{_}]" for _ in range(20)]
+examples = generate(prompts)
 print(examples)

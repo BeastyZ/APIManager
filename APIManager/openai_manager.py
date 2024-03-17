@@ -3,72 +3,54 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 import time
-from typing import Dict
 import threading
 import fcntl
 
 
-def repeat_until_calling_openai_api_successfully(func):
+def openai_error_wrapper(func):
     def wrapper(*args, **kwargs):
+        result = None
+        account_manager = kwargs.get('account_manager', None)
+        thread_id = kwargs.get('thread_id', None)
+        sender = kwargs.get('sender', None)
+
         while True:
-            result = None
-            account_manager = kwargs.get('account_manager', None)
-            thread_id = kwargs.get('thread_id', None)
-            sender = kwargs.get('sender', None)
-            account = account_manager.thread_to_account.get('thread_id', None)  # triad
+            account = account_manager.thread_to_account.get(thread_id, None)
             if account is None:
                 account = account_manager.get_next_account(thread_id)
             openai.api_key = account[-1]
             try:
                 result = func(*args, **kwargs)
 
-            except openai.error.APIConnectionError as e:
-                logger.info('openai connection error, so retry after sleeping 5 seconds')
-                logger.info(e)
+            except openai.APIConnectionError as e:
+                logger.warning('f"Failed to connect to OpenAI API: {e}')
+                logger.warning('Retry after sleeping 5 seconds')
                 time.sleep(5)
 
-            except openai.error.RateLimitError as e:
-                logger.info(type(e))
-                logger.info(e)
-                logger.info('e._message:{}'.format(e._message))
-                if 'quota' in e._message:
-                    # logger.info('now openai account {} runs out. so use next.'.format(account[-1]))
-                    logger.info(e)
-                    logger.info('retry after sleeping 30 seconds')
-                    time.sleep(30)
+            except openai.RateLimitError as e:
+                logger.warning(f'OpenAI API request exceeded rate limit: {e}')
+                logger.warning('Retry after sleeping 15 seconds')
+                time.sleep(15)
                     
-                    # account = account_manager.get_next_account(thread_id, account)
-                    # account_manager.thread_to_account[thread_id] = account
-                else:
-                    logger.info('openai rate limit error, so retry after sleeping 30 seconds')
-                    logger.info(e)
-                    time.sleep(30)
-                    
-            except openai.error.AuthenticationError as e:
-                if 'This key is associated with a deactivated account' in e._message:
-                    logger.info('the account {} is deactivated. so use next'.format(account[-1]))
-                    logger.info(e)
-                    account = account_manager.get_next_account(thread_id, account)
-                    account_manager.thread_to_account[thread_id] = account
-                else:
-                    logger.info('meet unexpected AuthenticationError, so retry after sleeping 5 seconds')
-                    logger.info(e)
-                    account = account_manager.get_next_account(thread_id, account)
-                    account_manager.thread_to_account[thread_id] = account
+            except openai.AuthenticationError as e:
+                logger.warning(f'Meet unexpected AuthenticationError: {e}')
+                logger.warning('Use next account.')
+                account = account_manager.get_next_account(thread_id, account)
+                account_manager.thread_to_account[thread_id] = account
 
-            except openai.error.OpenAIError as e:
-                logger.info('meet unexpected openai error, so retry after sleeping 5 seconds')
-                logger.info(e)
+            except openai.OpenAIError as e:
+                logger.warning(f'Meet unexpected openai error: {e}')
+                logger.warning('Retry after sleeping 5 seconds')
                 time.sleep(5)
 
             except Exception as e:
-                sender.send("Meet unexpected openai error")
+                if sender:
+                    sender.send("Meet unexpected openai error")
+                logger.warning('An error was encountered that could not be handled')
                 raise e
 
-            if result != None:
+            if result:
                 return result
-            else:
-                pass
 
     return wrapper
 

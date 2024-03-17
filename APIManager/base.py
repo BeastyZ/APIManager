@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from typing import Any
 
 
 class MessageSender:
@@ -20,11 +21,11 @@ class MessageSender:
         
 
     @abstractmethod
-    def send(self, message: str):
+    def send(self, message: Any):
         """Send messages such as errors or warnings to somewhere. 
         Args
         ----
-        message: str
+        message: Any
             Concrete message to send.
         """
         raise NotImplementedError("Must be subclassed.")
