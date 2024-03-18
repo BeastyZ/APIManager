@@ -44,10 +44,10 @@ def generate(prompts: List[str], api_model: str="gpt-3.5-turbo") -> List[Dict[st
         for future in concurrent.futures.as_completed(futures):
             index, ret = future.result()
             results.append((index, ret))
-        results = sorted([result[1] for result in results], key=lambda x: x[0])
+        results = sorted([result for result in results], key=lambda x: x[0])
 
     for i in range(len(results)):
-        examples[i]['response'] = results[i]
+        examples[i]['response'] = results[i][1]
     return examples
 
 
